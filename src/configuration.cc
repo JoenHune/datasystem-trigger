@@ -1,7 +1,6 @@
 #include "configuration.h"
 
 #include <string.h>
-#include <stdio.h>
 
 extern "C"
 {
@@ -16,8 +15,8 @@ extern "C"
 #include "st/stm32f10x_dma.h"
 }
 
-uint8_t usart2_rx_buffer[USART2_BUFFER_SIZE] = {0};
-uint8_t usart2_tx_buffer[USART2_BUFFER_SIZE] = {0};
+uint8_t usart2_rx_buffer[USART2_RX_BUFFER_SIZE] = {0};
+uint8_t usart2_tx_buffer[USART2_TX_BUFFER_SIZE] = {0};
 
 // rx接收来自GNSS系统的GPRMC信息
 // tx发送曝光时长信息
@@ -28,15 +27,15 @@ void usart2_configuration(uint8_t pre, uint8_t sub)
 
     usart_configuration(USART2, 115200, USART_Mode_Rx | USART_Mode_Tx, USART_Parity_No, USART_IT_IDLE);
 
-    dma_configuration(DMA1, DMA1_Channel6, DMA_DIR_PeripheralSRC, (uint32_t) & (USART2->DR), (uint32_t)usart2_rx_buffer, USART2_BUFFER_SIZE, DMA_IT_TC);
-    dma_configuration(DMA1, DMA1_Channel7, DMA_DIR_PeripheralDST, (uint32_t) & (USART2->DR), (uint32_t)usart2_tx_buffer, USART2_BUFFER_SIZE, DMA_IT_TC);
+    dma_configuration(DMA1, DMA1_Channel6, DMA_DIR_PeripheralSRC, (uint32_t) & (USART2->DR), (uint32_t)usart2_rx_buffer, USART2_RX_BUFFER_SIZE, DMA_IT_TC);
+    dma_configuration(DMA1, DMA1_Channel7, DMA_DIR_PeripheralDST, (uint32_t) & (USART2->DR), (uint32_t)usart2_tx_buffer, USART2_TX_BUFFER_SIZE, DMA_IT_TC);
 
     nvic_configuration(ENABLE, USART2_IRQn, pre, sub);
     nvic_configuration(ENABLE, DMA1_Channel6_IRQn, pre, sub);
     nvic_configuration(ENABLE, DMA1_Channel7_IRQn, pre, sub);
 
     DMA_Cmd(DMA1_Channel6, ENABLE);
-    DMA_Cmd(DMA1_Channel7, ENABLE);
+    // DMA_Cmd(DMA1_Channel7, ENABLE); // 默认不开启，开启即会传输
 
     USART_DMACmd(USART2, USART_DMAReq_Rx | USART_DMAReq_Tx, ENABLE);
 
@@ -46,27 +45,14 @@ void usart2_configuration(uint8_t pre, uint8_t sub)
 // 通过串口发送给定长度的字节流
 void usart2_printblock(uint8_t *data, uint8_t length)
 {
-    memcpy((uint8_t *)usart2_tx_buffer, data, length);
+    if (length == 0)
+        return;
 
-    DMA_Cmd(DMA1_Channel7, DISABLE);
-
-    while (DMA_GetITStatus(DMA1_IT_TC7) == RESET)
-        ;
+    if (data)
+        memcpy((uint8_t *)usart2_tx_buffer, data, length);
 
     DMA_SetCurrDataCounter(DMA1_Channel7, length);
-
     DMA_Cmd(DMA1_Channel7, ENABLE);
-}
-
-// 使printf可用
-int fputc(int ch, FILE *f)
-{
-    while (USART_GetITStatus(USART2, USART_IT_TC) == RESET)
-        ;
-
-    USART_SendData(USART2, (uint8_t)ch);
-
-    return ch;
 }
 
 // cameras extern trigger signal

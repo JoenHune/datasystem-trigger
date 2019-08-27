@@ -21,7 +21,7 @@ void dma_configuration(DMA_TypeDef * DMAx, DMA_Channel_TypeDef * channel, uint32
     dma.DMA_PeripheralDataSize = DMA_PeripheralDataSize_Byte;
     dma.DMA_MemoryDataSize = DMA_MemoryDataSize_Byte;
     dma.DMA_PeripheralInc = DMA_PeripheralInc_Disable;
-    dma.DMA_MemoryInc = DMA_MemoryInc_Disable;
+    dma.DMA_MemoryInc = DMA_MemoryInc_Enable;
     
     DMA_Init(channel, &dma);
 

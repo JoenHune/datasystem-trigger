@@ -2,7 +2,6 @@
 
 extern "C"
 {
-    
 #include "basic/gpio.h"
 
 #include "st/stm32f10x_tim.h"
@@ -15,51 +14,49 @@ void DMA1_Channel7_IRQHandler()
     if (DMA_GetITStatus(DMA1_IT_TC7) != RESET)
     {
         DMA_ClearITPendingBit(DMA1_IT_TC7);
+
+        DMA_Cmd(DMA1_Channel7, DISABLE);
     }
 }
 
 uint32_t receive_msg_size = 0;
 
-// usart2 dma接收中断
+void usart2_receive_msg_handler()
+{
+    DMA_Cmd(DMA1_Channel6, DISABLE);
+    receive_msg_size = USART2_RX_BUFFER_SIZE - DMA_GetCurrDataCounter(DMA1_Channel6);
+
+    if (usart2_rx_buffer[receive_msg_size - 3] == '*')
+    {
+        gpio_toggle_bit(GPIOB, 12);
+    }
+    
+    usart2_printblock(usart2_rx_buffer, receive_msg_size);
+
+    DMA_SetCurrDataCounter(DMA1_Channel6, USART2_RX_BUFFER_SIZE);
+    DMA_Cmd(DMA1_Channel6, ENABLE);
+
+    DMA_ClearITPendingBit(DMA1_IT_TC6);
+}
+
+// usart2定长接收中断处理函数 基于DMA接收完毕函数
 void DMA1_Channel6_IRQHandler()
 {
     if (DMA_GetITStatus(DMA1_IT_TC6) != RESET)
     {
-        DMA_Cmd(DMA1_Channel6, DISABLE);
-        receive_msg_size = USART2_BUFFER_SIZE - DMA_GetCurrDataCounter(DMA1_Channel6);
-
-        for (uint16_t i = 0; i < receive_msg_size; i++)
-        {
-
-        }
-
-        DMA_SetCurrDataCounter(DMA1_Channel6, USART2_BUFFER_SIZE);
-        DMA_Cmd(DMA1_Channel6, ENABLE);
-
-        DMA_ClearITPendingBit(DMA1_IT_TC6);
+        usart2_receive_msg_handler();
     }
 }
 
-// usart2接收中断
+// usart2不定长接收中断处理函数 基于串口空闲中断
 void USART2_IRQHandler()
 {
     if (USART_GetITStatus(USART2, USART_IT_IDLE) != RESET)
     {
-        gpio_toggle_bit(GPIOB, 12);
-        
         USART2->SR;
         USART2->DR;
 
-        DMA_Cmd(DMA1_Channel6, DISABLE);
-        receive_msg_size = USART2_BUFFER_SIZE - DMA_GetCurrDataCounter(DMA1_Channel6);
-
-        for (uint16_t i = 0; i < receive_msg_size; i++)
-        {
-
-        }
-
-        DMA_SetCurrDataCounter(DMA1_Channel6, USART2_BUFFER_SIZE);
-        DMA_Cmd(DMA1_Channel6, ENABLE);
+        usart2_receive_msg_handler();
     }
     
 }

@@ -1,7 +1,8 @@
 #pragma once
 #include "st/stm32f10x.h"
 
-const uint8_t  USART2_BUFFER_SIZE   = 255U;
+const uint8_t  USART2_TX_BUFFER_SIZE   = 255U;
+const uint8_t  USART2_RX_BUFFER_SIZE   = 255U;
 const uint16_t CAMERA_FREQUENCE     = 10U;
 const uint16_t TRIGGER_PERIOD       = 40000U;
 const uint16_t DETECTOR_PRESCALER   = 720U;
@@ -18,3 +19,6 @@ void timer4_configuration(uint8_t pre, uint8_t sub);
 void usart2_configuration(uint8_t pre, uint8_t sub);
 
 void usart2_printblock(uint8_t * data, uint8_t length);
+
+extern uint8_t usart2_rx_buffer[USART2_RX_BUFFER_SIZE];
+extern uint8_t usart2_tx_buffer[USART2_TX_BUFFER_SIZE];
