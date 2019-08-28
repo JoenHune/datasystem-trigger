@@ -71,17 +71,17 @@ void USART2_IRQHandler()
 uint16_t exposure_time1 = TRIGGER_PERIOD;
 uint16_t exposure_time2 = TRIGGER_PERIOD;
 
- int16_t error_avg2[20] = {0};
+int16_t  error_avg2[20] = {0};
 uint8_t  index2         = 0;
 
-uint16_t expourse_time_correct(uint16_t last_value)
+uint16_t trigger_time(uint16_t exposure_time_tim3)
 {
-    return static_cast<uint16_t>(TRIGGER_PERIOD - last_value / 2.f);
+    return static_cast<uint16_t>(TRIGGER_PERIOD - exposure_time_tim3 / 2.f);
 }
 
-uint16_t max_correct_time(uint16_t last_value)
+uint16_t max_trigger_time(uint16_t last_exposure_time_tim4)
 {
-    return static_cast<uint16_t>((2.f * MAX_EXPOSURE_TIME + last_value - c0) / 3.f);
+    return static_cast<uint16_t>((2.f * (MAX_EXPOSURE_TIME - MIN_EXPOSURE_TIME) + last_exposure_time_tim4) / 3.f);
 }
 
 // camera1 exposure time calculator
@@ -100,15 +100,15 @@ void TIM2_IRQHandler()
 
         // overflow-avoid
         limit<uint16_t>(exposure_time1, MIN_EXPOSURE_TIME, MAX_EXPOSURE_TIME);
-
-        TIM_SetCompare1(TIM3, expourse_time_correct(DELAY_FACTOR * exposure_time1));
+        
+        TIM_SetCompare1(TIM3, trigger_time(TIM_FACTOR_4to3 * exposure_time1));
 
         TIM_SetCounter(TIM2, 0);
 
         TIM_ClearITPendingBit(TIM2, TIM_IT_CC2);
     }
 }
-
+uint16_t trigger = 0;
 // camera2 exposure time calculator
 void TIM4_IRQHandler()
 {
@@ -125,14 +125,19 @@ void TIM4_IRQHandler()
     {
         gpio_set_bit(GPIOB, 12);
 
+        uint16_t last_exposure_time = exposure_time2;
         exposure_time2 = TIM_GetCounter(TIM4);
 
         // overflow-avoid
-        limit<uint16_t>(exposure_time2, MIN_EXPOSURE_TIME, MAX_EXPOSURE_TIME);
-        
-        error_avg2[index2++] = TIM_GetCapture2(TIM3) - expourse_time_correct(DELAY_FACTOR * exposure_time2);
+        limit<uint16_t>(exposure_time2, MIN_EXPOSURE_TIME, max_trigger_time(last_exposure_time));
+
+        trigger = trigger_time(TIM_FACTOR_4to3 * exposure_time2);
+
+        // error_avg2[index2++] = TIM_GetCapture2(TIM3) - trigger;
+        error_avg2[index2++] = exposure_time2;
+
             
-        TIM_SetCompare2(TIM3, expourse_time_correct(DELAY_FACTOR * exposure_time2));
+        TIM_SetCompare2(TIM3, trigger);
 
         TIM_SetCounter(TIM4, 0);
 
@@ -164,29 +169,29 @@ void TIM3_IRQHandler()
             TIM_SetCompare2(TIM3, compare2 - counter);
         }
 
-        float  time = DETECTOR_TIME_FACTOR * exposure_time2;
+        // float  time = DETECTOR_TIME_FACTOR * exposure_time2;
 
-        float error1 = 0;
-        for (uint8_t i = 0; i < CAMERA_FREQUENCE; i++)
-        {
-            error1 += abs(error_avg2[i]);
-        }
-        error1 *= TRIGGER_TIME_FACTOR / CAMERA_FREQUENCE;
+        // float error1 = 0;
+        // for (uint8_t i = 0; i < CAMERA_FREQUENCE; i++)
+        // {
+        //     error1 += abs(error_avg2[i]);
+        // }
+        // error1 *= TRIGGER_TIME_FACTOR / CAMERA_FREQUENCE;
 
-        float error2 = TRIGGER_TIME_FACTOR * (TRIGGER_PERIOD - counter) / TRIGGER_PERIOD;
+        // float error2 = TRIGGER_TIME_FACTOR * (TRIGGER_PERIOD - counter) / TRIGGER_PERIOD;
 
-        length = sprintf((char *)debug_message, "cam2: t=%.1f(ns), e1=%.1f(ns), e2=%f(ns), lost=%d \n", time, error1, error2, CAMERA_FREQUENCE - index2);
-        // length = sprintf((char *)debug_message, "e0=%7.1f(us) e1=%7.1f(us) e2=%7.1f(us) e3=%7.1f(us) e4=%7.1f(us) e5=%7.1f(us) e6=%7.1f(us) e7=%7.1f(us) e8=%7.1f(us) e9=%7.1f \n",
-        // TRIGGER_TIME_FACTOR * error_avg2[0], 
-        // TRIGGER_TIME_FACTOR * error_avg2[1], 
-        // TRIGGER_TIME_FACTOR * error_avg2[2], 
-        // TRIGGER_TIME_FACTOR * error_avg2[3], 
-        // TRIGGER_TIME_FACTOR * error_avg2[4], 
-        // TRIGGER_TIME_FACTOR * error_avg2[5], 
-        // TRIGGER_TIME_FACTOR * error_avg2[6], 
-        // TRIGGER_TIME_FACTOR * error_avg2[7], 
-        // TRIGGER_TIME_FACTOR * error_avg2[8], 
-        // TRIGGER_TIME_FACTOR * error_avg2[9]);
+        // length = sprintf((char *)debug_message, "cam2: t=%.1f(ns), e1=%.1f(ns), e2=%f(ns), lost=%d \n", time, error1, error2, CAMERA_FREQUENCE - index2);
+        length = sprintf((char *)debug_message, "e0=%7.1f(us) e1=%7.1f(us) e2=%7.1f(us) e3=%7.1f(us) e4=%7.1f(us) e5=%7.1f(us) e6=%7.1f(us) e7=%7.1f(us) e8=%7.1f(us) e9=%7.1f \n",
+        DETECTOR_TIME_FACTOR * error_avg2[0], 
+        DETECTOR_TIME_FACTOR * error_avg2[1], 
+        DETECTOR_TIME_FACTOR * error_avg2[2], 
+        DETECTOR_TIME_FACTOR * error_avg2[3], 
+        DETECTOR_TIME_FACTOR * error_avg2[4], 
+        DETECTOR_TIME_FACTOR * error_avg2[5], 
+        DETECTOR_TIME_FACTOR * error_avg2[6], 
+        DETECTOR_TIME_FACTOR * error_avg2[7], 
+        DETECTOR_TIME_FACTOR * error_avg2[8], 
+        DETECTOR_TIME_FACTOR * error_avg2[9]);
         
         usart2_printblock(debug_message, length);
 
