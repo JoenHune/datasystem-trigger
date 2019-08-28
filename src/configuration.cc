@@ -4,9 +4,9 @@
 
 extern "C"
 {
-#include "basic/gpio.h"
-#include "basic/nvic.h"
-#include "basic/dma.h"
+#include "device/gpio.h"
+#include "device/nvic.h"
+#include "device/dma.h"
 #include "device/usart.h"
 #include "device/timer.h"
 
@@ -75,7 +75,7 @@ void timer3_configuration(uint8_t pre, uint8_t sub)
 {
     gpio_configuration(GPIOA, 6, GPIO_Mode_AF_PP, GPIO_Speed_50MHz); // tim3_ch1 pps20_out1
     gpio_configuration(GPIOA, 7, GPIO_Mode_AF_PP, GPIO_Speed_50MHz); // tim3_ch3 pps20_out2
-    gpio_configuration(GPIOB, 0, GPIO_Mode_IPU, GPIO_Speed_50MHz);   // tim3_ch4 pps1_in
+    gpio_configuration(GPIOB, 0, GPIO_Mode_IN_FLOATING, GPIO_Speed_50MHz);   // tim3_ch4 pps1_in
 
     nvic_configuration(ENABLE, TIM3_IRQn, pre, sub);
 

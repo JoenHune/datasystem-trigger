@@ -2,8 +2,8 @@
 
 extern "C"
 {
-#include "basic/gpio.h"
-#include "basic/nvic.h"
+#include "device/gpio.h"
+#include "device/nvic.h"
 
 #include "st/stm32f10x_gpio.h"
 #include "st/misc.h"
@@ -19,10 +19,10 @@ int main()
 
     gpio_set_bit(GPIOB, 12);
 
-    // timer1_configuration();
-    // timer2_configuration(0, 2);
-    // timer3_configuration(0, 1);
-    // timer4_configuration(0, 2);
+    timer1_configuration();
+    timer2_configuration(0, 2);
+    timer3_configuration(0, 1);
+    timer4_configuration(0, 2);
 
     usart2_configuration(1, 1);
 

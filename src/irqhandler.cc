@@ -1,8 +1,14 @@
 #include "configuration.h"
 
+#include <cmath>
+
+#include "basic/common.h"
+
 extern "C"
 {
-#include "basic/gpio.h"
+#include <stdio.h>
+
+#include "device/gpio.h"
 
 #include "st/stm32f10x_tim.h"
 #include "st/stm32f10x_usart.h"
@@ -62,8 +68,21 @@ void USART2_IRQHandler()
 }
 
 // 两个相机的曝光时间
-uint32_t exposure_time1 = TRIGGER_PERIOD;
-uint32_t exposure_time2 = TRIGGER_PERIOD;
+uint16_t exposure_time1 = TRIGGER_PERIOD;
+uint16_t exposure_time2 = TRIGGER_PERIOD;
+
+ int16_t error_avg2[20] = {0};
+uint8_t  index2         = 0;
+
+uint16_t expourse_time_correct(uint16_t last_value)
+{
+    return static_cast<uint16_t>(TRIGGER_PERIOD - last_value / 2.f);
+}
+
+uint16_t max_correct_time(uint16_t last_value)
+{
+    return static_cast<uint16_t>((2.f * MAX_EXPOSURE_TIME + last_value - c0) / 3.f);
+}
 
 // camera1 exposure time calculator
 void TIM2_IRQHandler()
@@ -80,13 +99,9 @@ void TIM2_IRQHandler()
         exposure_time1 = TIM_GetCounter(TIM2);
 
         // overflow-avoid
-        if (exposure_time1 >= MAX_EXPOSURE_TIME)
-            exposure_time1 = MAX_EXPOSURE_TIME;
-        else if (exposure_time1 <= MIN_EXPOSURE_TIME)
-            exposure_time1 = MIN_EXPOSURE_TIME;
+        limit<uint16_t>(exposure_time1, MIN_EXPOSURE_TIME, MAX_EXPOSURE_TIME);
 
-        exposure_time1 = (uint32_t)(TRIGGER_PERIOD - exposure_time1 * DELAY_FACTOR);
-        TIM_SetCompare1(TIM3, exposure_time1);
+        TIM_SetCompare1(TIM3, expourse_time_correct(DELAY_FACTOR * exposure_time1));
 
         TIM_SetCounter(TIM2, 0);
 
@@ -99,7 +114,7 @@ void TIM4_IRQHandler()
 {
     if (TIM_GetITStatus(TIM4, TIM_IT_CC1) != RESET)
     {
-        // gpio_reset_bit(GPIOB, 12);
+        gpio_reset_bit(GPIOB, 12);
 
         TIM_SetCounter(TIM4, 0);
 
@@ -108,18 +123,16 @@ void TIM4_IRQHandler()
     
     if (TIM_GetITStatus(TIM4, TIM_IT_CC2) != RESET)
     {
-        // gpio_set_bit(GPIOB, 12);
+        gpio_set_bit(GPIOB, 12);
 
         exposure_time2 = TIM_GetCounter(TIM4);
 
         // overflow-avoid
-        if (exposure_time2 >= MAX_EXPOSURE_TIME)
-            exposure_time2 = MAX_EXPOSURE_TIME;
-        else if (exposure_time2 <= MIN_EXPOSURE_TIME)
-            exposure_time2 = MIN_EXPOSURE_TIME;
+        limit<uint16_t>(exposure_time2, MIN_EXPOSURE_TIME, MAX_EXPOSURE_TIME);
         
-        exposure_time2 = (uint32_t)(TRIGGER_PERIOD - exposure_time2 * DELAY_FACTOR);
-        TIM_SetCompare2(TIM3, exposure_time2);
+        error_avg2[index2++] = TIM_GetCapture2(TIM3) - expourse_time_correct(DELAY_FACTOR * exposure_time2);
+            
+        TIM_SetCompare2(TIM3, expourse_time_correct(DELAY_FACTOR * exposure_time2));
 
         TIM_SetCounter(TIM4, 0);
 
@@ -128,31 +141,56 @@ void TIM4_IRQHandler()
 }
 
 uint16_t counter = 0;
-uint16_t comper1 = 0;
-uint16_t comper2 = 0;
+uint16_t compare1 = 0;
+uint16_t compare2 = 0;
 
-uint8_t test_arr[3] = {'a', 'b', '\n'};
+uint8_t debug_message[USART2_TX_BUFFER_SIZE] = {0};
+uint16_t length = 0;
 
 void TIM3_IRQHandler()
 {    
     if (TIM_GetITStatus(TIM3, TIM_IT_CC3) != RESET)
     {
         counter = TIM_GetCounter(TIM3);
-        comper1 = TIM_GetCapture1(TIM3);
-        comper2 = TIM_GetCapture2(TIM3);
+        compare1 = TIM_GetCapture1(TIM3);
+        compare2 = TIM_GetCapture2(TIM3);
         
-        if (comper1 >= counter)
+        if (compare1 >= counter)
         {
-            TIM_SetCompare1(TIM3, comper1 - counter);
+            TIM_SetCompare1(TIM3, compare1 - counter);
         }
-        if (comper2 >= counter)
+        if (compare2 >= counter)
         {
-            TIM_SetCompare2(TIM3, comper2 - counter);
+            TIM_SetCompare2(TIM3, compare2 - counter);
         }
 
-        // printf("cam1: t=%ld, e=%d | cam2: t=%ld, e=%d\n", exposure_time1, comper1 - counter, exposure_time2, comper2 - counter);
+        float  time = DETECTOR_TIME_FACTOR * exposure_time2;
 
-        // usart2_printblock(test_arr, 3);
+        float error1 = 0;
+        for (uint8_t i = 0; i < CAMERA_FREQUENCE; i++)
+        {
+            error1 += abs(error_avg2[i]);
+        }
+        error1 *= TRIGGER_TIME_FACTOR / CAMERA_FREQUENCE;
+
+        float error2 = TRIGGER_TIME_FACTOR * (TRIGGER_PERIOD - counter) / TRIGGER_PERIOD;
+
+        length = sprintf((char *)debug_message, "cam2: t=%.1f(ns), e1=%.1f(ns), e2=%f(ns), lost=%d \n", time, error1, error2, CAMERA_FREQUENCE - index2);
+        // length = sprintf((char *)debug_message, "e0=%7.1f(us) e1=%7.1f(us) e2=%7.1f(us) e3=%7.1f(us) e4=%7.1f(us) e5=%7.1f(us) e6=%7.1f(us) e7=%7.1f(us) e8=%7.1f(us) e9=%7.1f \n",
+        // TRIGGER_TIME_FACTOR * error_avg2[0], 
+        // TRIGGER_TIME_FACTOR * error_avg2[1], 
+        // TRIGGER_TIME_FACTOR * error_avg2[2], 
+        // TRIGGER_TIME_FACTOR * error_avg2[3], 
+        // TRIGGER_TIME_FACTOR * error_avg2[4], 
+        // TRIGGER_TIME_FACTOR * error_avg2[5], 
+        // TRIGGER_TIME_FACTOR * error_avg2[6], 
+        // TRIGGER_TIME_FACTOR * error_avg2[7], 
+        // TRIGGER_TIME_FACTOR * error_avg2[8], 
+        // TRIGGER_TIME_FACTOR * error_avg2[9]);
+        
+        usart2_printblock(debug_message, length);
+
+        index2 = 0;
 
         TIM_SetCounter(TIM3, 0);
 
