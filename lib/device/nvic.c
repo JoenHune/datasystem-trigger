@@ -1,4 +1,4 @@
-#include "basic/nvic.h"
+#include "device/nvic.h"
 
 void nvic_set_priority_group(uint32_t PriorityGroup)
 {

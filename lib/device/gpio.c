@@ -1,4 +1,4 @@
-#include "basic/gpio.h"
+#include "device/gpio.h"
 #include "st/stm32f10x_rcc.h"
 
 void gpio_configuration(GPIO_TypeDef *GPIOx, uint16_t Pin, GPIOMode_TypeDef Mode, GPIOSpeed_TypeDef Speed)

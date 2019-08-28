@@ -1,4 +1,4 @@
-#include "basic/dma.h"
+#include "device/dma.h"
 #include "st/stm32f10x_dma.h"
 #include "st/stm32f10x_rcc.h"
 
