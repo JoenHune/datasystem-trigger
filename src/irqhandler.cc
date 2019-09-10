@@ -74,16 +74,18 @@ uint16_t exposure_time2 = TRIGGER_PERIOD;
 int16_t  error_avg2[20] = {0};
 uint8_t  index2         = 0;
 
+// 计算触发信号的高电平时间(即上升沿时间)
 uint16_t trigger_time(uint16_t exposure_time_tim3)
 {
     return static_cast<uint16_t>(TRIGGER_PERIOD - exposure_time_tim3 / 2.f);
 }
 
+// 根据前一帧曝光时间计算当前最大可调整的提前触发信号
 uint16_t max_trigger_time(uint16_t last_exposure_time_tim4)
 {
     return static_cast<uint16_t>((2.f * (MAX_EXPOSURE_TIME - MIN_EXPOSURE_TIME) + last_exposure_time_tim4) / 3.f);
 }
-
+ 
 // camera1 exposure time calculator
 void TIM2_IRQHandler()
 {
@@ -133,8 +135,8 @@ void TIM4_IRQHandler()
 
         trigger = trigger_time(TIM_FACTOR_4to3 * exposure_time2);
 
-        // error_avg2[index2++] = TIM_GetCapture2(TIM3) - trigger;
-        error_avg2[index2++] = exposure_time2;
+        error_avg2[index2++] = TIM_GetCapture2(TIM3) - trigger;
+        // error_avg2[index2++] = exposure_time2;
 
             
         TIM_SetCompare2(TIM3, trigger);
@@ -153,7 +155,7 @@ uint8_t debug_message[USART2_TX_BUFFER_SIZE] = {0};
 uint16_t length = 0;
 
 void TIM3_IRQHandler()
-{    
+{        
     if (TIM_GetITStatus(TIM3, TIM_IT_CC3) != RESET)
     {
         counter = TIM_GetCounter(TIM3);
@@ -169,29 +171,29 @@ void TIM3_IRQHandler()
             TIM_SetCompare2(TIM3, compare2 - counter);
         }
 
-        // float  time = DETECTOR_TIME_FACTOR * exposure_time2;
+        float  time = DETECTOR_TIME_FACTOR * exposure_time2;
 
-        // float error1 = 0;
-        // for (uint8_t i = 0; i < CAMERA_FREQUENCE; i++)
-        // {
-        //     error1 += abs(error_avg2[i]);
-        // }
-        // error1 *= TRIGGER_TIME_FACTOR / CAMERA_FREQUENCE;
+        float error1 = 0;
+        for (uint8_t i = 0; i < CAMERA_FREQUENCE; i++)
+        {
+            error1 += abs(error_avg2[i]);
+        }
+        error1 *= TRIGGER_TIME_FACTOR / CAMERA_FREQUENCE;
 
-        // float error2 = TRIGGER_TIME_FACTOR * (TRIGGER_PERIOD - counter) / TRIGGER_PERIOD;
+        float error2 = TRIGGER_TIME_FACTOR * (TRIGGER_PERIOD - counter);
 
-        // length = sprintf((char *)debug_message, "cam2: t=%.1f(ns), e1=%.1f(ns), e2=%f(ns), lost=%d \n", time, error1, error2, CAMERA_FREQUENCE - index2);
-        length = sprintf((char *)debug_message, "e0=%7.1f(us) e1=%7.1f(us) e2=%7.1f(us) e3=%7.1f(us) e4=%7.1f(us) e5=%7.1f(us) e6=%7.1f(us) e7=%7.1f(us) e8=%7.1f(us) e9=%7.1f \n",
-        DETECTOR_TIME_FACTOR * error_avg2[0], 
-        DETECTOR_TIME_FACTOR * error_avg2[1], 
-        DETECTOR_TIME_FACTOR * error_avg2[2], 
-        DETECTOR_TIME_FACTOR * error_avg2[3], 
-        DETECTOR_TIME_FACTOR * error_avg2[4], 
-        DETECTOR_TIME_FACTOR * error_avg2[5], 
-        DETECTOR_TIME_FACTOR * error_avg2[6], 
-        DETECTOR_TIME_FACTOR * error_avg2[7], 
-        DETECTOR_TIME_FACTOR * error_avg2[8], 
-        DETECTOR_TIME_FACTOR * error_avg2[9]);
+        length = sprintf((char *)debug_message, "cam2: t=%.1f(ns), e1=%.1f(ns), e2=%f(ns), lost=%d \n", time, error1, error2, CAMERA_FREQUENCE - index2);
+        // length = sprintf((char *)debug_message, "e0=%7.1f(us) e1=%7.1f(us) e2=%7.1f(us) e3=%7.1f(us) e4=%7.1f(us) e5=%7.1f(us) e6=%7.1f(us) e7=%7.1f(us) e8=%7.1f(us) e9=%7.1f \n",
+        // DETECTOR_TIME_FACTOR * error_avg2[0], 
+        // DETECTOR_TIME_FACTOR * error_avg2[1], 
+        // DETECTOR_TIME_FACTOR * error_avg2[2], 
+        // DETECTOR_TIME_FACTOR * error_avg2[3], 
+        // DETECTOR_TIME_FACTOR * error_avg2[4], 
+        // DETECTOR_TIME_FACTOR * error_avg2[5], 
+        // DETECTOR_TIME_FACTOR * error_avg2[6], 
+        // DETECTOR_TIME_FACTOR * error_avg2[7], 
+        // DETECTOR_TIME_FACTOR * error_avg2[8], 
+        // DETECTOR_TIME_FACTOR * error_avg2[9]);
         
         usart2_printblock(debug_message, length);
 
