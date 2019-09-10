@@ -3,6 +3,8 @@
 
 const uint8_t  USART2_TX_BUFFER_SIZE   = 255U;
 const uint8_t  USART2_RX_BUFFER_SIZE   = 255U;
+const uint8_t  USART3_TX_BUFFER_SIZE   = 255U;
+const uint8_t  USART3_RX_BUFFER_SIZE   = 255U;
 
 const uint16_t CAMERA_FREQUENCE     = 10U;
 
@@ -25,8 +27,12 @@ void timer3_configuration(uint8_t pre, uint8_t sub);
 void timer4_configuration(uint8_t pre, uint8_t sub);
 
 void usart2_configuration(uint8_t pre, uint8_t sub);
+void usart3_configuration(uint8_t pre, uint8_t sub);
 
 void usart2_printblock(uint8_t * data, uint8_t length);
+void usart3_printblock(uint8_t * data, uint8_t length);
 
 extern uint8_t usart2_rx_buffer[USART2_RX_BUFFER_SIZE];
 extern uint8_t usart2_tx_buffer[USART2_TX_BUFFER_SIZE];
+extern uint8_t usart3_rx_buffer[USART2_RX_BUFFER_SIZE];
+extern uint8_t usart3_tx_buffer[USART2_TX_BUFFER_SIZE];

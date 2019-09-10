@@ -18,8 +18,11 @@ extern "C"
 uint8_t usart2_rx_buffer[USART2_RX_BUFFER_SIZE] = {0};
 uint8_t usart2_tx_buffer[USART2_TX_BUFFER_SIZE] = {0};
 
+uint8_t usart3_rx_buffer[USART3_RX_BUFFER_SIZE] = {0};
+uint8_t usart3_tx_buffer[USART3_TX_BUFFER_SIZE] = {0};
+
 // rx接收来自GNSS系统的GPRMC信息
-// tx发送曝光时长信息
+// tx发送GPRMC信息
 void usart2_configuration(uint8_t pre, uint8_t sub)
 {
     gpio_configuration(GPIOA, 2, GPIO_Mode_AF_PP, GPIO_Speed_50MHz); // tx
@@ -42,6 +45,30 @@ void usart2_configuration(uint8_t pre, uint8_t sub)
     USART_Cmd(USART2, ENABLE);
 }
 
+// rx接收调试信息
+// tx发送曝光时长信息
+void usart3_configuration(uint8_t pre, uint8_t sub)
+{
+    gpio_configuration(GPIOB, 10, GPIO_Mode_AF_PP, GPIO_Speed_50MHz); // tx
+    gpio_configuration(GPIOB, 11, GPIO_Mode_IPU, GPIO_Speed_50MHz);   // rx
+
+    usart_configuration(USART3, 115200, USART_Mode_Rx | USART_Mode_Tx, USART_Parity_No, USART_IT_IDLE);
+
+    dma_configuration(DMA1, DMA1_Channel5, DMA_DIR_PeripheralSRC, (uint32_t) & (USART3->DR), (uint32_t)usart3_rx_buffer, USART3_RX_BUFFER_SIZE, DMA_IT_TC);
+    dma_configuration(DMA1, DMA1_Channel4, DMA_DIR_PeripheralDST, (uint32_t) & (USART3->DR), (uint32_t)usart3_tx_buffer, USART3_TX_BUFFER_SIZE, DMA_IT_TC);
+
+    nvic_configuration(ENABLE, USART3_IRQn, pre, sub);
+    nvic_configuration(ENABLE, DMA1_Channel4_IRQn, pre, sub);
+    nvic_configuration(ENABLE, DMA1_Channel5_IRQn, pre, sub);
+
+    DMA_Cmd(DMA1_Channel5, ENABLE);
+    // DMA_Cmd(DMA1_Channel4, ENABLE); // 默认不开启，开启即会传输
+
+    USART_DMACmd(USART3, USART_DMAReq_Rx | USART_DMAReq_Tx, ENABLE);
+
+    USART_Cmd(USART3, ENABLE);
+}
+
 // 通过串口发送给定长度的字节流
 void usart2_printblock(uint8_t *data, uint8_t length)
 {
@@ -53,6 +80,19 @@ void usart2_printblock(uint8_t *data, uint8_t length)
 
     DMA_SetCurrDataCounter(DMA1_Channel7, length);
     DMA_Cmd(DMA1_Channel7, ENABLE);
+}
+
+// 通过串口发送给定长度的字节流
+void usart3_printblock(uint8_t *data, uint8_t length)
+{
+    if (length == 0)
+        return;
+
+    if (data)
+        memcpy((uint8_t *)usart3_tx_buffer, data, length);
+
+    DMA_SetCurrDataCounter(DMA1_Channel4, length);
+    DMA_Cmd(DMA1_Channel4, ENABLE);
 }
 
 // cameras extern trigger signal
@@ -74,8 +114,8 @@ void timer1_configuration()
 void timer3_configuration(uint8_t pre, uint8_t sub)
 {
     gpio_configuration(GPIOA, 6, GPIO_Mode_AF_PP, GPIO_Speed_50MHz); // tim3_ch1 pps20_out1
-    gpio_configuration(GPIOA, 7, GPIO_Mode_AF_PP, GPIO_Speed_50MHz); // tim3_ch3 pps20_out2
-    gpio_configuration(GPIOB, 0, GPIO_Mode_IN_FLOATING, GPIO_Speed_50MHz);   // tim3_ch4 pps1_in
+    gpio_configuration(GPIOA, 7, GPIO_Mode_AF_PP, GPIO_Speed_50MHz); // tim3_ch2 pps20_out2
+    gpio_configuration(GPIOB, 0, GPIO_Mode_IN_FLOATING, GPIO_Speed_50MHz);   // tim3_ch3 pps1_in
 
     nvic_configuration(ENABLE, TIM3_IRQn, pre, sub);
 
