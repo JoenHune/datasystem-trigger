@@ -54,15 +54,15 @@ void usart3_configuration(uint8_t pre, uint8_t sub)
 
     usart_configuration(USART3, 115200, USART_Mode_Rx | USART_Mode_Tx, USART_Parity_No, USART_IT_IDLE);
 
-    dma_configuration(DMA1, DMA1_Channel5, DMA_DIR_PeripheralSRC, (uint32_t) & (USART3->DR), (uint32_t)usart3_rx_buffer, USART3_RX_BUFFER_SIZE, DMA_IT_TC);
-    dma_configuration(DMA1, DMA1_Channel4, DMA_DIR_PeripheralDST, (uint32_t) & (USART3->DR), (uint32_t)usart3_tx_buffer, USART3_TX_BUFFER_SIZE, DMA_IT_TC);
+    dma_configuration(DMA1, DMA1_Channel3, DMA_DIR_PeripheralSRC, (uint32_t) & (USART3->DR), (uint32_t)usart3_rx_buffer, USART3_RX_BUFFER_SIZE, DMA_IT_TC);
+    dma_configuration(DMA1, DMA1_Channel2, DMA_DIR_PeripheralDST, (uint32_t) & (USART3->DR), (uint32_t)usart3_tx_buffer, USART3_TX_BUFFER_SIZE, DMA_IT_TC);
 
     nvic_configuration(ENABLE, USART3_IRQn, pre, sub);
-    nvic_configuration(ENABLE, DMA1_Channel4_IRQn, pre, sub);
-    nvic_configuration(ENABLE, DMA1_Channel5_IRQn, pre, sub);
+    nvic_configuration(ENABLE, DMA1_Channel3_IRQn, pre, sub);
+    nvic_configuration(ENABLE, DMA1_Channel2_IRQn, pre, sub);
 
-    DMA_Cmd(DMA1_Channel5, ENABLE);
-    // DMA_Cmd(DMA1_Channel4, ENABLE); // 默认不开启，开启即会传输
+    DMA_Cmd(DMA1_Channel3, ENABLE);
+    // DMA_Cmd(DMA1_Channel2, ENABLE); // 默认不开启，开启即会传输
 
     USART_DMACmd(USART3, USART_DMAReq_Rx | USART_DMAReq_Tx, ENABLE);
 
@@ -75,8 +75,10 @@ void usart2_printblock(uint8_t *data, uint8_t length)
     if (length == 0)
         return;
 
-    if (data)
-        memcpy((uint8_t *)usart2_tx_buffer, data, length);
+    DMA_Cmd(DMA1_Channel7, DISABLE);
+
+    if (data != usart2_tx_buffer)
+        memcpy(usart2_tx_buffer, data, length);
 
     DMA_SetCurrDataCounter(DMA1_Channel7, length);
     DMA_Cmd(DMA1_Channel7, ENABLE);
@@ -88,14 +90,19 @@ void usart3_printblock(uint8_t *data, uint8_t length)
     if (length == 0)
         return;
 
-    if (data)
-        memcpy((uint8_t *)usart3_tx_buffer, data, length);
+    DMA_Cmd(DMA1_Channel2, DISABLE);
+    
+    if (data != usart3_tx_buffer)
+    {
+        memcpy(usart3_tx_buffer, data, length);
+    }
 
-    DMA_SetCurrDataCounter(DMA1_Channel4, length);
-    DMA_Cmd(DMA1_Channel4, ENABLE);
+    DMA_SetCurrDataCounter(DMA1_Channel2, length);
+    DMA_Cmd(DMA1_Channel2, ENABLE);
 }
 
-// cameras extern trigger signal
+// 模拟PPS输出
+// 定时器频率：1Hz
 void timer1_configuration()
 {
     gpio_configuration(GPIOA, 8, GPIO_Mode_AF_PP, GPIO_Speed_50MHz); // tim1_ch1 pps1_out(simulate)
@@ -110,7 +117,8 @@ void timer1_configuration()
     TIM_Cmd(TIM1, ENABLE);
 }
 
-// cameras extern trigger signal
+// 相机触发信号
+// 定时器频率：与相机期望频率相同的PWM输出和100KHz的输入捕获
 void timer3_configuration(uint8_t pre, uint8_t sub)
 {
     gpio_configuration(GPIOA, 6, GPIO_Mode_AF_PP, GPIO_Speed_50MHz); // tim3_ch1 pps20_out1
@@ -122,15 +130,18 @@ void timer3_configuration(uint8_t pre, uint8_t sub)
     // reduce from 72MHz
     timer_base_configuration(TIM3, TRIGGER_PERIOD, TRIGGER_PRESCALER, TIM_CKD_DIV1, TIM_CounterMode_Up);
 
-    timer_oc_configuration(TIM3, TIM_Channel_1, 30000, TIM_OCMode_PWM2);
-    timer_oc_configuration(TIM3, TIM_Channel_2, 30000, TIM_OCMode_PWM2);
+    TIM_ITConfig(TIM3, TIM_IT_Update, ENABLE);
+
+    timer_oc_configuration(TIM3, TIM_Channel_1, TRIGGER_PERIOD, TIM_OCMode_PWM2);
+    timer_oc_configuration(TIM3, TIM_Channel_2, TRIGGER_PERIOD, TIM_OCMode_PWM2);
 
     timer_ic_configuration(TIM3, TIM_Channel_3, TIM_ICPolarity_Rising, 0x00, TIM_ICPSC_DIV1, TIM_ICSelection_DirectTI);
 
     TIM_Cmd(TIM3, ENABLE);
 }
 
-// camera1 exposure time counter
+// camera1曝光时间捕获
+// 定时器频率：100KHz的输入捕获
 void timer2_configuration(uint8_t pre, uint8_t sub)
 {
     gpio_configuration(GPIOA, 0, GPIO_Mode_IPU, GPIO_Speed_50MHz); // tim2_ch1 camera1
@@ -147,7 +158,8 @@ void timer2_configuration(uint8_t pre, uint8_t sub)
     TIM_Cmd(TIM2, ENABLE);
 }
 
-// camera2 exposure time counter
+// camera2曝光时间捕获
+// 定时器频率：100KHz的输入捕获
 void timer4_configuration(uint8_t pre, uint8_t sub)
 {
     gpio_configuration(GPIOB, 6, GPIO_Mode_IPU, GPIO_Speed_50MHz); // tim4_ch1 camera2
@@ -155,7 +167,6 @@ void timer4_configuration(uint8_t pre, uint8_t sub)
 
     nvic_configuration(ENABLE, TIM4_IRQn, pre, sub);
 
-    // reduce to 1MHz from 72MHz at APB1 (dont know why but let it go)
     timer_base_configuration(TIM4, 0xFFFF, DETECTOR_PRESCALER, TIM_CKD_DIV1, TIM_CounterMode_Up);
 
     timer_ic_configuration(TIM4, TIM_Channel_1, TIM_ICPolarity_Rising, 0x00, TIM_ICPSC_DIV1, TIM_ICSelection_DirectTI);

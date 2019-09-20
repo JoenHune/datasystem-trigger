@@ -1,8 +1,8 @@
 #include "configuration.h"
 
-#include <cmath>
-
 #include "basic/common.h"
+
+#include "cameras.h"
 
 extern "C"
 {
@@ -13,6 +13,36 @@ extern "C"
 #include "st/stm32f10x_tim.h"
 #include "st/stm32f10x_usart.h"
 #include "st/stm32f10x_dma.h"
+
+uint8_t test_m[] = "test"; 
+
+// usart2接收处理函数
+void usart2_receive_msg_handler()
+{
+    DMA_Cmd(DMA1_Channel6, DISABLE);
+
+    // uint32_t length = USART2_RX_BUFFER_SIZE - DMA_GetCurrDataCounter(DMA1_Channel6);
+
+    // gpio_toggle_bit(GPIOB, 12);
+
+    // usart2_printblock(test_m, 4);
+
+    DMA_SetCurrDataCounter(DMA1_Channel6, USART2_RX_BUFFER_SIZE);
+    DMA_Cmd(DMA1_Channel6, ENABLE);
+}
+
+// usart3接收处理函数
+void usart3_receive_msg_handler()
+{
+    DMA_Cmd(DMA1_Channel3, DISABLE);
+
+    // uint32_t length = USART3_RX_BUFFER_SIZE - DMA_GetCurrDataCounter(DMA1_Channel3);
+
+    DMA_SetCurrDataCounter(DMA1_Channel3, USART3_RX_BUFFER_SIZE);
+    DMA_Cmd(DMA1_Channel3, ENABLE);
+}
+
+// ============================ USART2/3 发送 ============================ //
 
 // usart2 dma发送中断
 void DMA1_Channel7_IRQHandler()
@@ -25,25 +55,18 @@ void DMA1_Channel7_IRQHandler()
     }
 }
 
-uint32_t receive_msg_size = 0;
-
-void usart2_receive_msg_handler()
+// usart3 dma发送中断
+void DMA1_Channel2_IRQHandler()
 {
-    DMA_Cmd(DMA1_Channel6, DISABLE);
-    receive_msg_size = USART2_RX_BUFFER_SIZE - DMA_GetCurrDataCounter(DMA1_Channel6);
-
-    if (usart2_rx_buffer[receive_msg_size - 3] == '*')
+    if (DMA_GetITStatus(DMA1_IT_TC2) != RESET)
     {
-        gpio_toggle_bit(GPIOB, 12);
-    }
+        DMA_ClearITPendingBit(DMA1_IT_TC2);
     
-    usart2_printblock(usart2_rx_buffer, receive_msg_size);
-
-    DMA_SetCurrDataCounter(DMA1_Channel6, USART2_RX_BUFFER_SIZE);
-    DMA_Cmd(DMA1_Channel6, ENABLE);
-
-    DMA_ClearITPendingBit(DMA1_IT_TC6);
+        DMA_Cmd(DMA1_Channel2, DISABLE);
+    } 
 }
+
+// ============================ USART2 接收 ============================ //
 
 // usart2定长接收中断处理函数 基于DMA接收完毕函数
 void DMA1_Channel6_IRQHandler()
@@ -51,6 +74,8 @@ void DMA1_Channel6_IRQHandler()
     if (DMA_GetITStatus(DMA1_IT_TC6) != RESET)
     {
         usart2_receive_msg_handler();
+
+        DMA_ClearITPendingBit(DMA1_IT_TC6);
     }
 }
 
@@ -64,144 +89,101 @@ void USART2_IRQHandler()
 
         usart2_receive_msg_handler();
     }
-    
 }
 
-// 两个相机的曝光时间
-uint16_t exposure_time1 = TRIGGER_PERIOD;
-uint16_t exposure_time2 = TRIGGER_PERIOD;
+// ============================ USART3 接收 ============================ //
 
-int16_t  error_avg2[20] = {0};
-uint8_t  index2         = 0;
-
-// 计算触发信号的高电平时间(即上升沿时间)
-uint16_t trigger_time(uint16_t exposure_time_tim3)
+// usart3定长接收中断处理函数 基于DMA接收完毕函数
+void DMA1_Channel3_IRQHandler()
 {
-    return static_cast<uint16_t>(TRIGGER_PERIOD - exposure_time_tim3 / 2.f);
+    if (DMA_GetITStatus(DMA1_IT_TC3) != RESET)
+    {
+        usart3_receive_msg_handler();
+
+        DMA_ClearITPendingBit(DMA1_IT_TC3);
+    }
+}
+// usart3不定长接收中断处理函数 基于串口空闲中断
+void USART3_IRQHandler()
+{
+    if (USART_GetITStatus(USART3, USART_IT_IDLE) != RESET)
+    {
+        USART3->SR;
+        USART3->DR;
+
+        usart3_receive_msg_handler();
+    }
 }
 
-// 根据前一帧曝光时间计算当前最大可调整的提前触发信号
-uint16_t max_trigger_time(uint16_t last_exposure_time_tim4)
-{
-    return static_cast<uint16_t>((2.f * (MAX_EXPOSURE_TIME - MIN_EXPOSURE_TIME) + last_exposure_time_tim4) / 3.f);
-}
- 
-// camera1 exposure time calculator
+// ============================ TIMers ============================ //
+
+// 获取camera1的曝光时间和预测下一帧曝光时间
 void TIM2_IRQHandler()
 {
     if (TIM_GetITStatus(TIM2, TIM_IT_CC1) != RESET)
     {
+        // gpio_reset_bit(GPIOB, 12);  // debug用途
+
         TIM_SetCounter(TIM2, 0);
 
         TIM_ClearITPendingBit(TIM2, TIM_IT_CC1);
     }
-    
+
     if (TIM_GetITStatus(TIM2, TIM_IT_CC2) != RESET)
     {
-        exposure_time1 = TIM_GetCounter(TIM2);
+        // gpio_set_bit(GPIOB, 12);    // debug用途
 
-        // overflow-avoid
-        limit<uint16_t>(exposure_time1, MIN_EXPOSURE_TIME, MAX_EXPOSURE_TIME);
-        
-        TIM_SetCompare1(TIM3, trigger_time(TIM_FACTOR_4to3 * exposure_time1));
-
-        TIM_SetCounter(TIM2, 0);
+        update_camera_trigger_time(CAM1, TIM2, TIM3, TIM_Channel_1);
 
         TIM_ClearITPendingBit(TIM2, TIM_IT_CC2);
     }
 }
-uint16_t trigger = 0;
-// camera2 exposure time calculator
+
+// 获取camera2的曝光时间和预测下一帧曝光时间
 void TIM4_IRQHandler()
 {
     if (TIM_GetITStatus(TIM4, TIM_IT_CC1) != RESET)
     {
-        gpio_reset_bit(GPIOB, 12);
-
         TIM_SetCounter(TIM4, 0);
 
         TIM_ClearITPendingBit(TIM4, TIM_IT_CC1);
     }
-    
+
     if (TIM_GetITStatus(TIM4, TIM_IT_CC2) != RESET)
     {
-        gpio_set_bit(GPIOB, 12);
-
-        uint16_t last_exposure_time = exposure_time2;
-        exposure_time2 = TIM_GetCounter(TIM4);
-
-        // overflow-avoid
-        limit<uint16_t>(exposure_time2, MIN_EXPOSURE_TIME, max_trigger_time(last_exposure_time));
-
-        trigger = trigger_time(TIM_FACTOR_4to3 * exposure_time2);
-
-        error_avg2[index2++] = TIM_GetCapture2(TIM3) - trigger;
-        // error_avg2[index2++] = exposure_time2;
-
-            
-        TIM_SetCompare2(TIM3, trigger);
-
-        TIM_SetCounter(TIM4, 0);
+        update_camera_trigger_time(CAM2, TIM4, TIM3, TIM_Channel_2);
 
         TIM_ClearITPendingBit(TIM4, TIM_IT_CC2);
     }
 }
 
-uint16_t counter = 0;
-uint16_t compare1 = 0;
-uint16_t compare2 = 0;
-
-uint8_t debug_message[USART2_TX_BUFFER_SIZE] = {0};
-uint16_t length = 0;
-
 void TIM3_IRQHandler()
-{        
+{
+    // 捕获PPS信号上升沿
     if (TIM_GetITStatus(TIM3, TIM_IT_CC3) != RESET)
     {
-        counter = TIM_GetCounter(TIM3);
-        compare1 = TIM_GetCapture1(TIM3);
-        compare2 = TIM_GetCapture2(TIM3);
-        
-        if (compare1 >= counter)
+        // 只有TIM3的误差很大的时候才会有用？
+        if (TIM_GetCapture1(TIM3) >= TIM_GetCounter(TIM3))
         {
-            TIM_SetCompare1(TIM3, compare1 - counter);
+            TIM_SetCompare1(TIM3, TIM_GetCapture1(TIM3) - TIM_GetCounter(TIM3));
         }
-        if (compare2 >= counter)
+        if (TIM_GetCapture2(TIM3) >= TIM_GetCounter(TIM3))
         {
-            TIM_SetCompare2(TIM3, compare2 - counter);
+            TIM_SetCompare2(TIM3, TIM_GetCapture2(TIM3) - TIM_GetCounter(TIM3));
         }
 
-        float  time = DETECTOR_TIME_FACTOR * exposure_time2;
-
-        float error1 = 0;
-        for (uint8_t i = 0; i < CAMERA_FREQUENCE; i++)
-        {
-            error1 += abs(error_avg2[i]);
-        }
-        error1 *= TRIGGER_TIME_FACTOR / CAMERA_FREQUENCE;
-
-        float error2 = TRIGGER_TIME_FACTOR * (TRIGGER_PERIOD - counter);
-
-        length = sprintf((char *)debug_message, "cam2: t=%.1f(ns), e1=%.1f(ns), e2=%f(ns), lost=%d \n", time, error1, error2, CAMERA_FREQUENCE - index2);
-        // length = sprintf((char *)debug_message, "e0=%7.1f(us) e1=%7.1f(us) e2=%7.1f(us) e3=%7.1f(us) e4=%7.1f(us) e5=%7.1f(us) e6=%7.1f(us) e7=%7.1f(us) e8=%7.1f(us) e9=%7.1f \n",
-        // DETECTOR_TIME_FACTOR * error_avg2[0], 
-        // DETECTOR_TIME_FACTOR * error_avg2[1], 
-        // DETECTOR_TIME_FACTOR * error_avg2[2], 
-        // DETECTOR_TIME_FACTOR * error_avg2[3], 
-        // DETECTOR_TIME_FACTOR * error_avg2[4], 
-        // DETECTOR_TIME_FACTOR * error_avg2[5], 
-        // DETECTOR_TIME_FACTOR * error_avg2[6], 
-        // DETECTOR_TIME_FACTOR * error_avg2[7], 
-        // DETECTOR_TIME_FACTOR * error_avg2[8], 
-        // DETECTOR_TIME_FACTOR * error_avg2[9]);
-        
-        usart2_printblock(debug_message, length);
-
-        index2 = 0;
+        message_show_all_errors(CAM2);
 
         TIM_SetCounter(TIM3, 0);
 
         TIM_ClearITPendingBit(TIM3, TIM_IT_CC3);
+    }
+
+    if (TIM_GetITStatus(TIM3, TIM_IT_Update) != RESET)
+    {
+        update_predict_error_index();
+
+        TIM_ClearITPendingBit(TIM3, TIM_IT_Update);
     }
 }
 
